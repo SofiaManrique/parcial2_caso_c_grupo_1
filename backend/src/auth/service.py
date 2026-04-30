@@ -1,25 +1,48 @@
-"""Auth service — CON VULNERABILIDADES INTENCIONALES"""
-import hashlib, jwt
-from datetime import datetime
+"""Auth service hardened for the security assignment."""
+import os
+import uuid
+from datetime import datetime, timedelta, timezone
 
-# ← VULNERABLE: hardcodeado
-JWT_SECRET = "alcaldia_municipio_x_2024"
-DB_CONFIG = {"host":"10.0.0.12","database":"alcaldia_db",
-             "user":"postgres","password":"Admin1234!"}  # ← VULNERABLE
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+
+JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-env")
+JWT_ALG = "HS256"
+TOKEN_MINUTES = int(os.getenv("JWT_EXP_MINUTES", "60"))
+
+DB_CONFIG = {
+    "host": os.getenv("DB_HOST", "127.0.0.1"),
+    "database": os.getenv("DB_NAME", "alcaldia_db"),
+    "user": os.getenv("DB_USER", "postgres"),
+    "password": os.getenv("DB_PASSWORD", "postgres"),
+}
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 
 def hash_password(password: str) -> str:
-    # ← VULNERABLE: MD5 sin sal
-    return hashlib.md5(password.encode()).hexdigest()
+    return pwd_context.hash(password)
+
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return hashlib.md5(plain.encode()).hexdigest() == hashed
+    return pwd_context.verify(plain, hashed)
+
 
 def create_token(data: dict) -> str:
-    # ← VULNERABLE: sin exp ni jti
-    return jwt.encode(data.copy(), JWT_SECRET, algorithm="HS256")
+    now = datetime.now(timezone.utc)
+    payload = data.copy()
+    payload.update(
+        {
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=TOKEN_MINUTES)).timestamp()),
+            "jti": str(uuid.uuid4()),
+        }
+    )
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
+
 
 def decode_token(token: str) -> dict:
     try:
-        return jwt.decode(token.replace("Bearer ",""), JWT_SECRET, algorithms=["HS256"])
-    except Exception as e:
+        return jwt.decode(token.replace("Bearer ", ""), JWT_SECRET, algorithms=[JWT_ALG])
+    except JWTError as e:
         raise ValueError(str(e))
