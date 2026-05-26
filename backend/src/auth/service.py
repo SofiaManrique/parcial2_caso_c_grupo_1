@@ -28,13 +28,14 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
-def create_token(data: dict) -> str:
+def create_token(data: dict, expires_minutes: int | None = None) -> str:
+    minutes = expires_minutes or TOKEN_MINUTES
     now = datetime.now(timezone.utc)
     payload = data.copy()
     payload.update(
         {
             "iat": int(now.timestamp()),
-            "exp": int((now + timedelta(minutes=TOKEN_MINUTES)).timestamp()),
+            "exp": int((now + timedelta(minutes=minutes)).timestamp()),
             "jti": str(uuid.uuid4()),
         }
     )
