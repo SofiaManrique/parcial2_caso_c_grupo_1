@@ -151,6 +151,53 @@ def _find_user(cur, cedula: str):
     return None
 
 
+TABLAS_PERMITIDAS = {"ciudadanos", "funcionarios"}
+
+
+def _update_login_fails(cur, tabla: str, fails: int, user_id: int, blocked_until=None):
+    """Actualiza intentos fallidos sin interpolar el nombre de tabla en el SQL."""
+    if tabla not in TABLAS_PERMITIDAS:
+        return
+    if tabla == "ciudadanos":
+        if blocked_until:
+            cur.execute(
+                "UPDATE ciudadanos SET intentos_fallidos = %s, bloqueado_hasta = %s WHERE id = %s",
+                (fails, blocked_until, user_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE ciudadanos SET intentos_fallidos = %s WHERE id = %s",
+                (fails, user_id),
+            )
+    else:
+        if blocked_until:
+            cur.execute(
+                "UPDATE funcionarios SET intentos_fallidos = %s, bloqueado_hasta = %s WHERE id = %s",
+                (fails, blocked_until, user_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE funcionarios SET intentos_fallidos = %s WHERE id = %s",
+                (fails, user_id),
+            )
+
+
+def _reset_login_fails(cur, tabla: str, user_id: int):
+    """Resetea intentos fallidos después de login exitoso."""
+    if tabla not in TABLAS_PERMITIDAS:
+        return
+    if tabla == "ciudadanos":
+        cur.execute(
+            "UPDATE ciudadanos SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = %s",
+            (user_id,),
+        )
+    else:
+        cur.execute(
+            "UPDATE funcionarios SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = %s",
+            (user_id,),
+        )
+
+
 @router.post("/login")
 def login(body: LoginBody, request: Request):
     ip = request.client.host
@@ -169,16 +216,10 @@ def login(body: LoginBody, request: Request):
                 new_fails = user[5] + 1
                 if new_fails >= MAX_INTENTOS:
                     until = datetime.now(timezone.utc) + timedelta(minutes=BLOQUEO_MINUTOS)
-                    cur.execute(
-                        f"UPDATE {tabla} SET intentos_fallidos = %s, bloqueado_hasta = %s WHERE id = %s",
-                        (new_fails, until, user[0]),
-                    )
+                    _update_login_fails(cur, tabla, new_fails, user[0], until)
                     log_event("cuenta_bloqueada", tabla[:-1], user[0], f"intentos={new_fails}", ip)
                 else:
-                    cur.execute(
-                        f"UPDATE {tabla} SET intentos_fallidos = %s WHERE id = %s",
-                        (new_fails, user[0]),
-                    )
+                    _update_login_fails(cur, tabla, new_fails, user[0])
             log_event("login_fallido", detail=f"cedula=***{body.cedula[-4:]}", ip=ip)
             raise HTTPException(401, "Credenciales inválidas")
 
@@ -190,10 +231,7 @@ def login(body: LoginBody, request: Request):
         if user[3] != "activo":
             raise HTTPException(403, "Cuenta no activa. Verifique su correo.")
 
-        cur.execute(
-            f"UPDATE {tabla} SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = %s",
-            (user[0],),
-        )
+        _reset_login_fails(cur, tabla, user[0])
 
         # Verificar si tiene MFA activo
         user_type = "funcionario" if tabla == "funcionarios" else "ciudadano"
