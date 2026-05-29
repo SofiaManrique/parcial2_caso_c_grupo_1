@@ -1,0 +1,676 @@
+/* ─── Alcaldía Digital — Design System ────────────────────────────────────── */
+/* Basado en shadcn theme "Fork of Twitter" + identidad institucional         */
+
+/* ── 1. Tokens del tema shadcn ──────────────────────────────────────────── */
+:root {
+  /* Colores */
+  --background:       oklch(1.0000 0 0);
+  --foreground:       oklch(0.1884 0.0128 248.5103);
+  --card:             oklch(0.9784 0.0011 197.1387);
+  --card-foreground:  oklch(0.1884 0.0128 248.5103);
+  --primary:          oklch(0.547  0.246  262.866);
+  --primary-hover:    oklch(0.488  0.243  264.405);
+  --primary-fg:       oklch(1.0000 0 0);
+  --secondary:        oklch(0.9392 0.0166 250.8453);
+  --muted:            oklch(0.9222 0.0013 286.3737);
+  --muted-fg:         oklch(0.4500 0.0128 248.5103);
+  --accent:           oklch(0.9392 0.0166 250.8453);
+  --border:           oklch(0.9317 0.0118 231.6594);
+  --input-bg:         oklch(0.9809 0.0025 228.7836);
+  --ring:             oklch(0.6818 0.1584 243.3540);
+  --destructive:      oklch(0.6188 0.2376 25.7658);
+
+  /* Semánticos para estados de trámite */
+  --estado-radicado:  #3b82f6;
+  --estado-revision:  #f59e0b;
+  --estado-requiere:  #8b5cf6;
+  --estado-aprobado:  #10b981;
+  --estado-negado:    #ef4444;
+  --estado-archivado: #6b7280;
+
+  /* Tipografía */
+  --font-sans:        'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --radius:           0.625rem;
+  --radius-sm:        0.375rem;
+  --radius-lg:        0.875rem;
+
+  /* Sombras */
+  --shadow-sm:        0 1px 2px 0 oklch(0.1884 0.0128 248.5103 / 0.06);
+  --shadow:           0 1px 3px 0 oklch(0.1884 0.0128 248.5103 / 0.10),
+                      0 1px 2px -1px oklch(0.1884 0.0128 248.5103 / 0.10);
+  --shadow-md:        0 4px 6px -1px oklch(0.1884 0.0128 248.5103 / 0.10),
+                      0 2px 4px -2px oklch(0.1884 0.0128 248.5103 / 0.10);
+}
+
+/* ── 2. Base ────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--muted);
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 3. App Shell — Dashboard Layout ────────────────────────────────────── */
+html, body { height: 100%; margin: 0; }
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Header superior ── */
+.app-header {
+  flex-shrink: 0;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  background: linear-gradient(135deg,
+    oklch(0.290 0.115 262.866) 0%,
+    oklch(0.370 0.155 262.866) 100%);
+  border-bottom: 1px solid oklch(0.240 0.095 262.866);
+  box-shadow: 0 2px 8px oklch(0.1884 0.0128 248 / 0.25);
+  z-index: 100;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.header-brand-icon { font-size: 1.5rem; line-height: 1; }
+
+.header-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.header-brand-name {
+  color: #fff;
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.header-brand-sub {
+  color: oklch(0.78 0.04 248);
+  font-size: 0.7rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+.header-user {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: oklch(0.547 0.246 262.866 / 0.55);
+  border: 2px solid oklch(0.65 0.12 262 / 0.5);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.user-details {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.user-name {
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.user-role-badge {
+  display: inline-block;
+  color: oklch(0.88 0.05 248);
+  font-size: 0.69rem;
+  font-weight: 500;
+  background: oklch(0.547 0.246 262.866 / 0.35);
+  border: 1px solid oklch(0.65 0.12 262 / 0.35);
+  padding: 0.05rem 0.45rem;
+  border-radius: 2rem;
+  letter-spacing: 0.02em;
+}
+
+.btn-logout {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: oklch(0.82 0.04 248);
+  background: transparent;
+  border: 1px solid oklch(0.60 0.10 248 / 0.40);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--font-sans);
+}
+
+.btn-logout:hover {
+  background: oklch(0.547 0.246 262.866 / 0.25);
+  border-color: oklch(0.65 0.12 262 / 0.6);
+  color: #fff;
+}
+
+/* ── App body: sidebar + main ── */
+.app-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ── Sidebar ── */
+.app-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--background);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 1.25rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sidebar-section-label {
+  font-size: 0.69rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-fg);
+  padding: 0.25rem 0.625rem;
+  margin-top: 0.25rem;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius);
+  color: oklch(0.40 0.01 248);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.12s, color 0.12s;
+  cursor: pointer;
+}
+
+.sidebar-link i {
+  font-size: 1rem;
+  width: 1.125rem;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.sidebar-link:hover {
+  background: var(--secondary);
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.sidebar-link:hover i { opacity: 1; }
+
+.sidebar-link.active {
+  background: oklch(0.930 0.045 250);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.sidebar-link.active i {
+  opacity: 1;
+  color: var(--primary);
+}
+
+.sidebar-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.75rem 0.25rem;
+}
+
+/* ── Main content ── */
+.app-main {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--muted);
+  padding: 1.75rem;
+}
+
+/* ── Responsive: sidebar colapsable en móvil ── */
+@media (max-width: 768px) {
+  .app-sidebar { display: none; }
+  .app-main    { padding: 1.25rem; }
+  .user-details, .header-brand-sub { display: none; }
+}
+
+/* ── 4. Contenedor principal ────────────────────────────────────────────── */
+.container {
+  max-width: 1080px !important;
+}
+
+/* ── 5. Cards ───────────────────────────────────────────────────────────── */
+.card {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  transition: box-shadow 0.2s;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.card-header {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0 !important;
+  padding: 1rem 1.5rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.card-body {
+  padding: 1.5rem;
+}
+
+.card-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--foreground);
+  letter-spacing: -0.02em;
+  margin-bottom: 0.25rem;
+}
+
+/* ── 6. Botones ─────────────────────────────────────────────────────────── */
+.btn {
+  font-weight: 500;
+  font-size: 0.875rem;
+  border-radius: var(--radius);
+  padding: 0.5rem 1rem;
+  transition: all 0.15s;
+  border: none;
+  letter-spacing: 0.01em;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--primary-fg);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-primary:hover, .btn-primary:focus {
+  background: var(--primary-hover);
+  color: var(--primary-fg);
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background: var(--secondary);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  background: var(--accent);
+  color: var(--foreground);
+  border-color: var(--ring);
+}
+
+.btn-outline-primary {
+  border: 1.5px solid var(--primary);
+  color: var(--primary);
+  background: transparent;
+}
+
+.btn-outline-primary:hover {
+  background: var(--primary);
+  color: var(--primary-fg);
+}
+
+.btn-danger, .btn-outline-danger {
+  --bs-btn-bg: var(--destructive);
+}
+
+.btn-sm {
+  font-size: 0.8125rem;
+  padding: 0.3rem 0.75rem;
+}
+
+.btn-lg {
+  font-size: 1rem;
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-lg);
+}
+
+.btn-warning {
+  background: oklch(0.75 0.16 75);
+  color: oklch(0.25 0.06 75);
+  border: none;
+}
+
+.btn-warning:hover {
+  background: oklch(0.70 0.18 75);
+  color: oklch(0.20 0.06 75);
+}
+
+.btn-success {
+  background: oklch(0.55 0.18 160);
+  color: white;
+  border: none;
+}
+
+.btn-success:hover {
+  background: oklch(0.50 0.19 160);
+  color: white;
+}
+
+/* ── 7. Formularios ─────────────────────────────────────────────────────── */
+.form-control {
+  background: var(--background);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--foreground);
+  font-size: 0.9rem;
+  padding: 0.5625rem 0.875rem;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  box-shadow: var(--shadow-sm);
+}
+
+.form-control:focus {
+  background: var(--background);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px oklch(0.547 0.246 262.866 / 0.15), var(--shadow-sm);
+  outline: none;
+}
+
+.form-control::placeholder {
+  color: oklch(0.65 0.005 248);
+  font-weight: 400;
+}
+
+/* Selects con estilo propio — no planos */
+.form-select {
+  background-color: var(--background);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%231a56db' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 16px 16px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--foreground);
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0.5625rem 2.5rem 0.5625rem 0.875rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.form-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px oklch(0.547 0.246 262.866 / 0.15), var(--shadow-sm);
+  outline: none;
+}
+
+.form-select:hover {
+  border-color: oklch(0.75 0.06 248);
+}
+
+/* Opción por defecto ("Selecciona...") visualmente diferenciada */
+.form-select option[value=""] {
+  color: oklch(0.60 0.005 248);
+}
+
+.form-label {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: oklch(0.32 0.012 248);
+  margin-bottom: 0.375rem;
+  letter-spacing: 0.01em;
+}
+
+.form-text {
+  font-size: 0.8125rem;
+  color: var(--muted-fg);
+}
+
+/* Textarea */
+textarea.form-control {
+  resize: vertical;
+  min-height: 100px;
+}
+
+/* Input group */
+.input-group .form-control,
+.input-group .form-select {
+  border-radius: var(--radius) !important;
+}
+
+/* ── 8. Badges de estado ────────────────────────────────────────────────── */
+.badge {
+  font-weight: 500;
+  font-size: 0.75rem;
+  padding: 0.3em 0.65em;
+  border-radius: 2rem;
+  letter-spacing: 0.01em;
+}
+
+.badge.bg-info,
+.badge-radicado   { background: oklch(0.92 0.06 245) !important; color: oklch(0.35 0.18 245) !important; }
+.badge-revision   { background: oklch(0.95 0.10 75)  !important; color: oklch(0.35 0.14 75)  !important; }
+.badge-requiere   { background: oklch(0.93 0.08 280) !important; color: oklch(0.35 0.18 280) !important; }
+.badge-aprobado   { background: oklch(0.90 0.09 160) !important; color: oklch(0.30 0.16 160) !important; }
+.badge-negado     { background: oklch(0.95 0.08 25)  !important; color: oklch(0.35 0.18 25)  !important; }
+.badge-archivado  { background: oklch(0.92 0.01 248) !important; color: oklch(0.40 0.01 248) !important; }
+
+/* ── 9. Tabla ───────────────────────────────────────────────────────────── */
+.table {
+  font-size: 0.875rem;
+}
+
+.table th {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--muted-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 2px solid var(--border);
+  padding: 0.875rem 0.75rem;
+  background: var(--card);
+}
+
+.table td {
+  padding: 0.875rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--foreground);
+  vertical-align: middle;
+}
+
+.table-striped tbody tr:nth-of-type(even) {
+  background: var(--card);
+}
+
+.table-striped tbody tr:hover {
+  background: var(--accent);
+}
+
+/* ── 10. Alertas ────────────────────────────────────────────────────────── */
+.alert {
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  font-size: 0.9rem;
+  padding: 0.875rem 1.125rem;
+}
+
+.alert-success {
+  background: oklch(0.95 0.06 160);
+  border-color: oklch(0.80 0.12 160);
+  color: oklch(0.28 0.14 160);
+}
+
+.alert-danger {
+  background: oklch(0.97 0.04 25);
+  border-color: oklch(0.85 0.10 25);
+  color: oklch(0.35 0.18 25);
+}
+
+.alert-warning {
+  background: oklch(0.97 0.07 80);
+  border-color: oklch(0.85 0.12 75);
+  color: oklch(0.35 0.14 70);
+}
+
+.alert-info {
+  background: oklch(0.96 0.04 245);
+  border-color: oklch(0.88 0.08 245);
+  color: oklch(0.30 0.18 255);
+}
+
+/* ── 11. Headings ───────────────────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--foreground);
+}
+
+h1 { font-size: 1.875rem; }
+h2 { font-size: 1.5rem; }
+
+/* ── 12. Page header (títulos de sección) ───────────────────────────────── */
+.page-header {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.page-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--foreground);
+  margin: 0;
+}
+
+.page-header p {
+  color: var(--muted-fg);
+  font-size: 0.9rem;
+  margin: 0.25rem 0 0;
+}
+
+/* ── 13. Código y monospace ─────────────────────────────────────────────── */
+code {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.2em 0.45em;
+  font-size: 0.875em;
+  color: oklch(0.488 0.243 264.405);
+  font-weight: 600;
+}
+
+/* ── 14. Inputs tipo date ───────────────────────────────────────────────── */
+input[type="date"].form-control {
+  color: var(--foreground);
+}
+
+/* ── 15. Spinner ────────────────────────────────────────────────────────── */
+.spinner-border {
+  color: var(--primary) !important;
+}
+
+/* ── 16. Links ──────────────────────────────────────────────────────────── */
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--primary-hover);
+  text-decoration: underline;
+}
+
+/* ── 17. Dividers ───────────────────────────────────────────────────────── */
+hr {
+  border-color: var(--border);
+  opacity: 1;
+  margin: 1.25rem 0;
+}
+
+/* ── 18. Scrollbar sutil ────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--muted); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ring); }
+
+/* ── 19. Animaciones suaves ─────────────────────────────────────────────── */
+.card, .btn, .form-control, .form-select, .nav-link {
+  transition: all 0.15s ease;
+}
+
+/* ── 20. Utilidades específicas del portal ──────────────────────────────── */
+.text-muted   { color: var(--muted-fg) !important; }
+.bg-light     { background: var(--card) !important; }
+.border       { border-color: var(--border) !important; }
+
+.section-card {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+}
+
+/* Contenedor principal con padding vertical */
+.main-content {
+  padding: 2rem 0;
+  min-height: calc(100vh - 64px);
+}
+
+/* ── 21. Responsive ─────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .card-body { padding: 1.25rem; }
+  h1 { font-size: 1.5rem; }
+  .btn-lg { font-size: 0.9375rem; padding: 0.625rem 1.25rem; }
+}

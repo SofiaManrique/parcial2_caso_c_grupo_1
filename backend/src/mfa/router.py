@@ -129,12 +129,15 @@ def _check_rate_limit(key: str):
         if blocked_until and now >= blocked_until:
             _otp_fail_counts[key] = (0, None)
 
-def _record_fail(key: str):
+def _record_fail(key: str, user_type: str | None = None, user_id: int | None = None, ip: str = ""):
+    from datetime import timedelta
     now = datetime.now(timezone.utc)
     count = _otp_fail_counts.get(key, (0, None))[0] + 1
     if count >= MFA_VERIFY_MAX_ATTEMPTS:
-        from datetime import timedelta
         _otp_fail_counts[key] = (count, now + timedelta(minutes=MFA_BLOCK_MINUTES))
+        # Alerta nivel 10 → visible en Wazuh como posible fuerza bruta en segundo factor
+        log_event("mfa_bloqueado", user_type, user_id,
+                  f"intentos={count} bloqueado_{MFA_BLOCK_MINUTES}min", ip)
     else:
         _otp_fail_counts[key] = (count, None)
 
@@ -171,7 +174,7 @@ def verify_mfa_login(body: MFALoginVerify, request: Request, authorization: str 
         totp = pyotp.TOTP(secret)
 
         if not totp.verify(body.code):
-            _record_fail(rate_key)
+            _record_fail(rate_key, user_type, user_id, request.client.host)
             log_event("mfa_verify_fallido", user_type, user_id, ip=request.client.host)
             raise HTTPException(401, "Código MFA inválido")
 

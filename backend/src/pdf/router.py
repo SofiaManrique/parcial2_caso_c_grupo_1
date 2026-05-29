@@ -41,24 +41,25 @@ def pdf_certificado(
     with get_db() as conn:
         cur = conn.cursor()
 
+        # Filtra por radicado Y ciudadano_id en una query — previene IDOR (OWASP A01)
+        # Si no existe o pertenece a otro → siempre 403, sin revelar existencia
         cur.execute(
             """SELECT t.numero_radicado, ct.nombre AS tipo, t.estado, t.created_at,
-                      c.nombre, c.apellido, c.tipo_documento, c.cedula, t.ciudadano_id
+                      c.nombre, c.apellido, c.tipo_documento, c.cedula
                FROM tramites t
                JOIN catalogo_tramites ct ON ct.id = t.catalogo_id
                JOIN ciudadanos c ON c.id = t.ciudadano_id
-               WHERE t.numero_radicado = %s""",
-            (radicado,),
+               WHERE t.numero_radicado = %s AND t.ciudadano_id = %s""",
+            (radicado, uid),
         )
         row = cur.fetchone()
 
     if not row:
-        raise HTTPException(404, "Trámite no encontrado")
-    if row[8] != uid:
-        raise HTTPException(403, "No tiene permiso para este certificado")
+        raise HTTPException(403, "No autorizado")
 
     tramite = {"numero_radicado": row[0], "tipo": row[1], "estado": row[2], "created_at": str(row[3])}
     ciudadano = {"nombre": f"{row[4]} {row[5]}", "tipo_documento": row[6], "cedula": row[7]}
+
 
     pdf_bytes = generar_certificado_tramite(tramite, ciudadano)
     log_event("pdf_certificado", "ciudadano", uid, f"radicado={radicado}", request.client.host)
@@ -113,16 +114,63 @@ def pdf_acto(
         f = cur.fetchone()
     funcionario = {"nombre": f"{f[0]} {f[1]}", "cargo": f[2]}
 
+    tramite_id = row[0]
     pdf_bytes = generar_acto_administrativo(
         tramite, ciudadano, funcionario,
         sanitize_text(body.decision), sanitize_text(body.justificacion),
     )
-    log_event("pdf_acto", "funcionario", func_id, f"radicado={body.radicado}", request.client.host)
+
+    # Almacena copia en BD asociada al expediente — no pública, solo con auth
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO actos_administrativos
+               (tramite_id, funcionario_id, decision, justificacion, pdf_content)
+               VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+            (tramite_id, func_id,
+             sanitize_text(body.decision), sanitize_text(body.justificacion),
+             pdf_bytes),
+        )
+        acto_id = cur.fetchone()[0]
+
+    log_event("pdf_acto", "funcionario", func_id,
+              f"radicado={body.radicado} acto_id={acto_id}", request.client.host)
 
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": "attachment; filename=acto_administrativo.pdf"},
+        headers={
+            "Content-Disposition": f"attachment; filename=acto_{body.radicado}.pdf",
+            "X-Acto-ID": str(acto_id),
+        },
+    )
+
+
+# ── C10: Recuperar acto almacenado (solo con auth) ───────────
+
+@router.get("/pdf/acto/{acto_id}")
+def get_acto_almacenado(
+    acto_id: int,
+    user: dict = Depends(require_role("ROLE_FUNCIONARIO", "ROLE_ADMIN", "ROLE_AUDITOR")),
+):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT a.pdf_content, t.numero_radicado
+               FROM actos_administrativos a
+               JOIN tramites t ON t.id = a.tramite_id
+               WHERE a.id = %s""",
+            (acto_id,),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(404, "Acto no encontrado")
+
+    return Response(
+        content=bytes(row[0]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=acto_{row[1]}.pdf"},
     )
 
 

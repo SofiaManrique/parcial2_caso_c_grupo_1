@@ -1,5 +1,6 @@
 """Generación de PDFs en memoria con ReportLab. No guarda nada en disco."""
 import io
+import re
 import hashlib
 from datetime import datetime, timezone
 
@@ -14,17 +15,21 @@ from src.core.sanitize import sanitize_text
 ALCALDIA_NOMBRE = "Alcaldía Digital de Municipio X"
 
 
-def _build_pdf(elements: list, title: str) -> bytes:
+def _build_pdf(elements: list, title: str, author: str = ALCALDIA_NOMBRE) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
         pagesize=letter,
         title=title,
-        author=ALCALDIA_NOMBRE,
+        author=author,
         creator=ALCALDIA_NOMBRE,
+        subject="Documento Oficial — Alcaldía Digital",
     )
     doc.build(elements)
-    return buf.getvalue()
+    raw = buf.getvalue()
+    # Oculta versión de ReportLab en metadatos del PDF (OWASP — no exponer librerías)
+    clean = re.sub(rb"/Producer \([^)]+\)", b"/Producer (Alcaldia Digital)", raw)
+    return clean
 
 
 def _styles():
@@ -86,7 +91,11 @@ def generar_acto_administrativo(tramite: dict, ciudadano: dict, funcionario: dic
         Spacer(1, 1 * cm),
         Paragraph("<i>Este acto administrativo fue generado electrónicamente.</i>", styles["Normal"]),
     ]
-    return _build_pdf(elems, f"Acto Administrativo {tramite['numero_radicado']}")
+    return _build_pdf(
+        elems,
+        title=f"Acto Administrativo {tramite['numero_radicado']}",
+        author=funcionario.get("nombre", ALCALDIA_NOMBRE),
+    )
 
 
 def generar_reporte_auditoria(registros: list[dict], fecha_inicio: str, fecha_fin: str, generado_por: str) -> bytes:

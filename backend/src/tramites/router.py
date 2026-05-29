@@ -13,6 +13,16 @@ router = APIRouter()
 
 ESTADOS_VALIDOS = {"Radicado", "En revisión", "Requerimiento de información", "Aprobado", "Negado", "Archivado"}
 
+# Orden lógico de estados para detectar retrocesos
+_ORDEN_ESTADO = {
+    "Radicado": 1,
+    "En revisión": 2,
+    "Requerimiento de información": 3,
+    "Aprobado": 4,
+    "Negado": 4,
+    "Archivado": 5,
+}
+
 
 # ── Schemas ──────────────────────────────────────────────────
 
@@ -39,9 +49,11 @@ def radicar_tramite(
     with get_db() as conn:
         cur = conn.cursor()
 
-        cur.execute("SELECT id FROM catalogo_tramites WHERE id = %s", (body.catalogo_id,))
-        if not cur.fetchone():
+        cur.execute("SELECT id, nombre FROM catalogo_tramites WHERE id = %s", (body.catalogo_id,))
+        cat_row = cur.fetchone()
+        if not cat_row:
             raise HTTPException(400, "Tipo de trámite no válido")
+        tipo_nombre = cat_row[1]
 
         cur.execute("SELECT nextval('radicado_seq')")
         seq = cur.fetchone()[0]
@@ -62,8 +74,21 @@ def radicar_tramite(
             (tramite_id, request.client.host),
         )
 
-    log_event("radicar_tramite", "ciudadano", uid, f"radicado={radicado}", request.client.host)
+    log_event("radicar_tramite", "ciudadano", uid,
+              f"radicado={radicado} tipo={tipo_nombre} ciudadano_id={uid}",
+              request.client.host)
     return {"numero_radicado": radicado, "mensaje": "Trámite radicado exitosamente"}
+
+
+# ── Catálogo de trámites (público) ───────────────────────────
+
+@router.get("/tramites/catalogo")
+def catalogo():
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, codigo, nombre FROM catalogo_tramites ORDER BY nombre")
+        rows = [{"id": r[0], "codigo": r[1], "nombre": r[2]} for r in cur.fetchall()]
+    return {"tipos": rows}
 
 
 # ── C05: Consultar mis trámites ──────────────────────────────
@@ -77,7 +102,8 @@ def ver_mis_tramites(user: dict = Depends(require_role("ROLE_CIUDADANO"))):
         cur.execute(
             """SELECT t.numero_radicado, ct.nombre AS tipo, t.estado,
                       t.descripcion, t.observaciones,
-                      f.nombre AS funcionario, t.created_at
+                      COALESCE(f.nombre || ' ' || f.apellido, NULL) AS funcionario,
+                      t.created_at
                FROM tramites t
                JOIN catalogo_tramites ct ON ct.id = t.catalogo_id
                LEFT JOIN funcionarios f ON f.id = t.funcionario_id
@@ -97,27 +123,22 @@ def ver_tramite(radicado: str, user: dict = Depends(require_role("ROLE_CIUDADANO
 
     with get_db() as conn:
         cur = conn.cursor()
+        # Filtra por radicado Y ciudadano_id en una sola query.
+        # Si no existe o pertenece a otro → siempre 403, sin revelar si el radicado existe.
         cur.execute(
             """SELECT t.numero_radicado, ct.nombre AS tipo, t.estado,
                       t.descripcion, t.observaciones,
-                      f.nombre AS funcionario, t.created_at
+                      COALESCE(f.nombre || ' ' || f.apellido, NULL) AS funcionario,
+                      t.created_at
                FROM tramites t
                JOIN catalogo_tramites ct ON ct.id = t.catalogo_id
                LEFT JOIN funcionarios f ON f.id = t.funcionario_id
-               WHERE t.numero_radicado = %s""",
-            (radicado,),
+               WHERE t.numero_radicado = %s AND t.ciudadano_id = %s""",
+            (radicado, uid),
         )
         row = cur.fetchone()
         if not row:
-            raise HTTPException(404, "Trámite no encontrado")
-
-        cur.execute(
-            "SELECT ciudadano_id FROM tramites WHERE numero_radicado = %s", (radicado,)
-        )
-        owner = cur.fetchone()[0]
-        if owner != uid:
-            raise HTTPException(403, "No tiene permiso para ver este trámite")
-
+            raise HTTPException(403, "No autorizado")
         columns = [desc[0] for desc in cur.description]
 
     return dict(zip(columns, row))
@@ -158,6 +179,17 @@ def actualizar_estado(
             raise HTTPException(403, "No puede gestionar trámites de otra dependencia")
 
         estado_anterior = tramite[1]
+
+        # Retroceso de estado requiere justificación obligatoria
+        nivel_anterior = _ORDEN_ESTADO.get(estado_anterior, 0)
+        nivel_nuevo = _ORDEN_ESTADO.get(body.estado, 0)
+        if nivel_nuevo < nivel_anterior and not (body.observaciones and body.observaciones.strip()):
+            raise HTTPException(
+                400,
+                f"Retroceder el estado de '{estado_anterior}' a '{body.estado}' "
+                f"requiere justificación en el campo observaciones."
+            )
+
         obs_clean = sanitize_text(body.observaciones)
 
         cur.execute(
@@ -179,6 +211,32 @@ def actualizar_estado(
     return {"mensaje": "Estado actualizado", "radicado": radicado, "nuevo_estado": body.estado}
 
 
+# ── Ver tramite individual (intranet funcionario) ────────────
+
+@router.get("/intranet/tramites/{radicado}")
+def ver_tramite_intranet(
+    radicado: str,
+    user: dict = Depends(require_role("ROLE_FUNCIONARIO", "ROLE_ADMIN")),
+):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT t.numero_radicado, ct.nombre AS tipo, t.estado,
+                      t.descripcion, t.observaciones,
+                      f.nombre AS funcionario, t.created_at
+               FROM tramites t
+               JOIN catalogo_tramites ct ON ct.id = t.catalogo_id
+               LEFT JOIN funcionarios f ON f.id = t.funcionario_id
+               WHERE t.numero_radicado = %s""",
+            (radicado,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Trámite no encontrado")
+        columns = [desc[0] for desc in cur.description]
+    return dict(zip(columns, row))
+
+
 # ── Listar funcionarios (intranet) ───────────────────────────
 
 @router.get("/intranet/funcionarios")
@@ -190,12 +248,12 @@ def listar_funcionarios(user: dict = Depends(require_role("ROLE_FUNCIONARIO", "R
     return {"funcionarios": rows}
 
 
-# ── Catálogo de trámites (público) ───────────────────────────
+# ── Dependencias (intranet) ──────────────────────────────────
 
-@router.get("/tramites/catalogo")
-def catalogo():
+@router.get("/intranet/dependencias")
+def listar_dependencias(user: dict = Depends(require_role("ROLE_FUNCIONARIO", "ROLE_ADMIN"))):
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, codigo, nombre FROM catalogo_tramites ORDER BY nombre")
-        rows = [{"id": r[0], "codigo": r[1], "nombre": r[2]} for r in cur.fetchall()]
-    return {"tipos": rows}
+        cur.execute("SELECT id, nombre FROM dependencias ORDER BY nombre")
+        rows = [{"id": r[0], "nombre": r[1]} for r in cur.fetchall()]
+    return {"dependencias": rows}

@@ -1,0 +1,71 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: alcaldia_db
+      POSTGRES_USER: alcaldia_app
+      POSTGRES_PASSWORD: alcaldia_pass_local
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alcaldia_app -d alcaldia_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DB_HOST: db
+      DB_NAME: alcaldia_db
+      DB_USER: alcaldia_app
+      DB_PASSWORD: alcaldia_pass_local
+      JWT_SECRET: dev_secret_change_in_production
+      JWT_EXP_MINUTES: "60"
+      MFA_FERNET_KEY: rRB7fYBo32ofuHgtBsLYQK33GjnEg3iHFd048zsOHqQ=
+      # SMTP — configurar con Mailtrap o Gmail para envío real
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@alcaldia.gov.co}
+      APP_URL: ${APP_URL:-http://localhost:4200}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "4200:4200"
+    depends_on:
+      - backend
+
+  # Agente Wazuh — solo activo cuando WAZUH_MANAGER está configurado
+  wazuh-agent:
+    build: ./infra/wazuh
+    hostname: alcaldia-digital
+    restart: unless-stopped
+    environment:
+      WAZUH_MANAGER: ${WAZUH_MANAGER:-}
+      WAZUH_AGENT_NAME: alcaldia-digital
+      WAZUH_REGISTRATION_PASSWORD: ${WAZUH_REGISTRATION_PASSWORD:-}
+    volumes:
+      # Persiste client.keys entre reinicios (evita re-registro duplicado)
+      - wazuh_agent_keys:/var/ossec/etc
+      # Lee los logs JSON de todos los contenedores Docker
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    profiles:
+      - wazuh
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  wazuh_agent_keys:

@@ -7,3 +7,15 @@ frontend/dist/
 frontend/.angular/
 *.log
 .DS_Store
+
+# Credenciales y configuración local
+.env
+
+# Skills de Claude Code / Taste Skill (instaladas localmente, no van al repo)
+.agents/
+SKILL*.md
+SKILL_*.md
+skills-lock.json
+
+# Secretos de producción (nunca al repo)
+backend/.env.production

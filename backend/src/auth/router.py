@@ -7,9 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr, field_validator
 
 from src.auth.dependencies import require_role
-from src.auth.service import hash_password, verify_password, create_token, DB_CONFIG
+from src.auth.service import hash_password, verify_password, create_token, DB_CONFIG, decode_token
 from src.core.audit import log_event
 from src.core.db import get_db
+from src.core.email import send_verification_email, send_temp_password_email
 from src.core.sanitize import sanitize_text
 
 router = APIRouter()
@@ -30,6 +31,26 @@ class RegisterCiudadano(BaseModel):
     apellido: str
     fecha_nacimiento: str | None = None
     municipio: str | None = None
+    email: EmailStr
+    telefono: str
+    password: str
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if not PASSWORD_REGEX.match(v):
+            raise ValueError(
+                "Mínimo 8 caracteres, una mayúscula, un número y un carácter especial"
+            )
+        return v
+
+
+class RegisterContratista(BaseModel):
+    tipo_documento: str = "CC"
+    cedula: str
+    nombre: str
+    apellido: str
+    empresa: str | None = None
     email: EmailStr
     telefono: str
     password: str
@@ -103,7 +124,44 @@ def register(body: RegisterCiudadano, request: Request):
         )
 
     log_event("registro_ciudadano", "ciudadano", user_id, ip=request.client.host)
+    send_verification_email(body.email, token_val)
     return {"mensaje": "Registro exitoso. Revise su correo para activar la cuenta."}
+
+
+# ── Registro contratista ─────────────────────────────────────
+
+@router.post("/register/contratista")
+def register_contratista(body: RegisterContratista, request: Request):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM contratistas WHERE cedula = %s OR email = %s",
+            (body.cedula, body.email),
+        )
+        if cur.fetchone():
+            raise HTTPException(400, "No se pudo completar el registro")
+
+        pwd = hash_password(body.password)
+        cur.execute(
+            """INSERT INTO contratistas
+               (tipo_documento, cedula, nombre, apellido, empresa, email, telefono, password_hash, estado)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'activo')
+               RETURNING id""",
+            (
+                sanitize_text(body.tipo_documento),
+                body.cedula,
+                sanitize_text(body.nombre),
+                sanitize_text(body.apellido),
+                sanitize_text(body.empresa),
+                body.email,
+                body.telefono,
+                pwd,
+            ),
+        )
+        user_id = cur.fetchone()[0]
+
+    log_event("registro_contratista", "contratista", user_id, ip=request.client.host)
+    return {"mensaje": "Registro exitoso. Ya puede iniciar sesión."}
 
 
 # ── Verificación de correo ───────────────────────────────────
@@ -130,72 +188,50 @@ def verify_email(token: str):
 # ── C03: Login (tabla unificada: ciudadanos + funcionarios) ──
 
 def _find_user(cur, cedula: str):
-    """Busca en ciudadanos y funcionarios. Retorna (id, nombre, role, estado, hash, tabla, intentos, bloqueado_hasta)."""
-    cur.execute(
-        "SELECT id, nombre, role, estado, password_hash, intentos_fallidos, bloqueado_hasta "
-        "FROM ciudadanos WHERE cedula = %s",
-        (cedula,),
-    )
-    row = cur.fetchone()
-    if row:
-        return (*row, "ciudadanos")
-
-    cur.execute(
-        "SELECT id, nombre, role, estado, password_hash, intentos_fallidos, bloqueado_hasta "
-        "FROM funcionarios WHERE cedula = %s",
-        (cedula,),
-    )
-    row = cur.fetchone()
-    if row:
-        return (*row, "funcionarios")
+    """Busca en ciudadanos, funcionarios y contratistas."""
+    for tabla in ("ciudadanos", "funcionarios", "contratistas"):
+        cur.execute(
+            f"SELECT id, nombre, role, estado, password_hash, intentos_fallidos, bloqueado_hasta "
+            f"FROM {tabla} WHERE cedula = %s",
+            (cedula,),
+        )
+        row = cur.fetchone()
+        if row:
+            return (*row, tabla)
     return None
 
 
-TABLAS_PERMITIDAS = {"ciudadanos", "funcionarios"}
+TABLAS_PERMITIDAS = {"ciudadanos", "funcionarios", "contratistas"}
+
+
+_SQL_FAILS: dict[str, tuple[str, str, str]] = {
+    "ciudadanos":   ("UPDATE ciudadanos SET intentos_fallidos=%s, bloqueado_hasta=%s WHERE id=%s",
+                     "UPDATE ciudadanos SET intentos_fallidos=%s WHERE id=%s",
+                     "UPDATE ciudadanos SET intentos_fallidos=0, bloqueado_hasta=NULL WHERE id=%s"),
+    "funcionarios": ("UPDATE funcionarios SET intentos_fallidos=%s, bloqueado_hasta=%s WHERE id=%s",
+                     "UPDATE funcionarios SET intentos_fallidos=%s WHERE id=%s",
+                     "UPDATE funcionarios SET intentos_fallidos=0, bloqueado_hasta=NULL WHERE id=%s"),
+    "contratistas": ("UPDATE contratistas SET intentos_fallidos=%s, bloqueado_hasta=%s WHERE id=%s",
+                     "UPDATE contratistas SET intentos_fallidos=%s WHERE id=%s",
+                     "UPDATE contratistas SET intentos_fallidos=0, bloqueado_hasta=NULL WHERE id=%s"),
+}
 
 
 def _update_login_fails(cur, tabla: str, fails: int, user_id: int, blocked_until=None):
-    """Actualiza intentos fallidos sin interpolar el nombre de tabla en el SQL."""
     if tabla not in TABLAS_PERMITIDAS:
         return
-    if tabla == "ciudadanos":
-        if blocked_until:
-            cur.execute(
-                "UPDATE ciudadanos SET intentos_fallidos = %s, bloqueado_hasta = %s WHERE id = %s",
-                (fails, blocked_until, user_id),
-            )
-        else:
-            cur.execute(
-                "UPDATE ciudadanos SET intentos_fallidos = %s WHERE id = %s",
-                (fails, user_id),
-            )
+    sql_blocked, sql_plain, _ = _SQL_FAILS[tabla]
+    if blocked_until:
+        cur.execute(sql_blocked, (fails, blocked_until, user_id))
     else:
-        if blocked_until:
-            cur.execute(
-                "UPDATE funcionarios SET intentos_fallidos = %s, bloqueado_hasta = %s WHERE id = %s",
-                (fails, blocked_until, user_id),
-            )
-        else:
-            cur.execute(
-                "UPDATE funcionarios SET intentos_fallidos = %s WHERE id = %s",
-                (fails, user_id),
-            )
+        cur.execute(sql_plain, (fails, user_id))
 
 
 def _reset_login_fails(cur, tabla: str, user_id: int):
-    """Resetea intentos fallidos después de login exitoso."""
     if tabla not in TABLAS_PERMITIDAS:
         return
-    if tabla == "ciudadanos":
-        cur.execute(
-            "UPDATE ciudadanos SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = %s",
-            (user_id,),
-        )
-    else:
-        cur.execute(
-            "UPDATE funcionarios SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = %s",
-            (user_id,),
-        )
+    _, _, sql_reset = _SQL_FAILS[tabla]
+    cur.execute(sql_reset, (user_id,))
 
 
 @router.post("/login")
@@ -233,8 +269,23 @@ def login(body: LoginBody, request: Request):
 
         _reset_login_fails(cur, tabla, user[0])
 
-        # Verificar si tiene MFA activo
-        user_type = "funcionario" if tabla == "funcionarios" else "ciudadano"
+        if tabla == "funcionarios":
+            user_type = "funcionario"
+            cur.execute(
+                "SELECT password_temporal, temp_password_expires_at FROM funcionarios WHERE id = %s",
+                (user[0],),
+            )
+            pwd_row = cur.fetchone()
+            if pwd_row and pwd_row[0]:
+                exp = pwd_row[1]
+                if exp and datetime.now(timezone.utc) > exp.replace(tzinfo=timezone.utc):
+                    raise HTTPException(403, "Credenciales temporales expiradas. Contacte al administrador.")
+        elif tabla == "contratistas":
+            user_type = "contratista"
+            pwd_row = None
+        else:
+            user_type = "ciudadano"
+            pwd_row = None
         cur.execute(
             "SELECT is_active FROM mfa_config WHERE user_type = %s AND user_id = %s AND is_active = TRUE",
             (user_type, user[0]),
@@ -255,6 +306,7 @@ def login(body: LoginBody, request: Request):
         log_event("login_paso1_ok", user_type, user[0], ip=ip)
         return {"mfa_required": True, "partial_token": partial_token}
 
+    must_change = bool(pwd_row and pwd_row[0]) if tabla == "funcionarios" else False
     token = create_token({
         "sub": str(user[0]),
         "user_id": user[0],
@@ -262,9 +314,55 @@ def login(body: LoginBody, request: Request):
         "cedula_masked": cedula_masked,
         "role": user[2],
         "user_type": user_type,
+        "must_change_password": must_change,
     })
     log_event("login_ok", user_type, user[0], ip=ip)
-    return {"token": token}
+    return {"token": token, "must_change_password": must_change}
+
+
+# ── Cambio de contraseña (obligatorio primer ingreso) ────────
+
+class ChangePasswordBody(BaseModel):
+    password_actual: str
+    password_nuevo: str
+
+    @field_validator("password_nuevo")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if not PASSWORD_REGEX.match(v):
+            raise ValueError("Mínimo 8 caracteres, una mayúscula, un número y un carácter especial")
+        return v
+
+
+@router.post("/change-password")
+def change_password(
+    body: ChangePasswordBody,
+    request: Request,
+    user: dict = Depends(require_role("ROLE_FUNCIONARIO", "ROLE_ADMIN", "ROLE_AUDITOR")),
+):
+    uid = user["user_id"]
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT password_hash FROM funcionarios WHERE id = %s", (uid,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Funcionario no encontrado")
+
+        if not verify_password(body.password_actual, row[0]):
+            raise HTTPException(401, "Contraseña actual incorrecta")
+
+        new_hash = hash_password(body.password_nuevo)
+        cur.execute(
+            """UPDATE funcionarios
+               SET password_hash = %s, password_temporal = FALSE,
+                   temp_password_expires_at = NULL
+               WHERE id = %s""",
+            (new_hash, uid),
+        )
+
+    log_event("cambio_password", "funcionario", uid, ip=request.client.host)
+    return {"mensaje": "Contraseña actualizada correctamente"}
 
 
 # ── C02: Admin crea funcionario ──────────────────────────────
@@ -292,11 +390,13 @@ def crear_funcionario(
         if cur.fetchone():
             raise HTTPException(400, "No se pudo completar el registro")
 
+        expires_tmp = datetime.now(timezone.utc) + timedelta(hours=48)
         cur.execute(
             """INSERT INTO funcionarios
                (tipo_documento, cedula, nombre, apellido, cargo,
-                dependencia_id, email, telefono, password_hash)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                dependencia_id, email, telefono, password_hash,
+                password_temporal, temp_password_expires_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE,%s)
                RETURNING id""",
             (
                 sanitize_text(body.tipo_documento),
@@ -308,6 +408,7 @@ def crear_funcionario(
                 body.email,
                 body.telefono,
                 pwd_hash,
+                expires_tmp,
             ),
         )
         func_id = cur.fetchone()[0]
@@ -318,8 +419,14 @@ def crear_funcionario(
         f"admin_id={admin['user_id']}",
         request.client.host,
     )
+    send_temp_password_email(
+        body.email,
+        f"{sanitize_text(body.nombre)} {sanitize_text(body.apellido)}",
+        body.cedula,
+        temp_password,
+    )
     return {
-        "mensaje": "Funcionario creado",
+        "mensaje": "Funcionario creado. Se enviaron las credenciales al correo institucional.",
         "funcionario_id": func_id,
         "password_temporal": temp_password,
     }

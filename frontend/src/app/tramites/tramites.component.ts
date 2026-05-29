@@ -1,113 +1,94 @@
 import { Component, OnInit } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { environment } from '../../environments/environment';
+import { Router } from '@angular/router';
+import { TramitesService } from '../shared/services/tramites.service';
 import { AuthService } from '../shared/services/auth.service';
 import DOMPurify from 'dompurify';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 
 @Component({
-  selector: 'app-tramites',
+  selector: 'app-view-tramites',
   template: `
-    <div>
-      <h1>Mis Trámites — Alcaldía de Municipio X</h1>
+    <div class="container mt-5">
+      <h1 class="mb-4">Mis Trámites</h1>
 
-      <div [innerHTML]="noticiaHtml"></div>
-
-      <ul>
-        <li *ngFor="let t of tramites">{{ t[1] }} — {{ t[3] }}</li>
-      </ul>
-
-      <!-- Solo intranet roles (guía Caso C) -->
-      <div *ngIf="canSearchFuncionarios">
-        <input [(ngModel)]="busqueda" placeholder="Buscar funcionario..." />
-        <button type="button" (click)="buscarFuncionario()">Buscar</button>
+      <div class="row mb-4">
+        <div class="col-md-12">
+          <button class="btn btn-primary" (click)="goToFileTramite()">+ Radicar Nuevo Trámite</button>
+        </div>
       </div>
 
-      <form [formGroup]="pagoForm" (ngSubmit)="procesarPago()">
-        <input formControlName="tarjeta" placeholder="Número de tarjeta (16 dígitos)" type="text" />
-        <input formControlName="cvv" placeholder="CVV" type="password" />
-        <input formControlName="monto" placeholder="Monto" type="number" />
-        <input formControlName="matricula" placeholder="Matrícula inmobiliaria" type="text" />
+      <div class="alert alert-warning" *ngIf="tramites.length === 0 && !loading">
+        <p>No has radiado trámites aún.</p>
+      </div>
 
-        <button type="submit">Pagar Impuesto</button>
-      </form>
+      <div class="table-responsive" *ngIf="tramites.length > 0">
+        <table class="table table-striped">
+          <thead>
+            <tr>
+              <th>Radicado</th>
+              <th>Tipo</th>
+              <th>Estado</th>
+              <th>Fecha</th>
+              <th>Funcionario</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let tramite of tramites">
+              <td>{{ tramite.numero_radicado }}</td>
+              <td>{{ tramite.tipo }}</td>
+              <td><span class="badge bg-info">{{ tramite.estado }}</span></td>
+              <td>{{ tramite.created_at | date:'short' }}</td>
+              <td>{{ tramite.funcionario || '-' }}</td>
+              <td>
+                <button class="btn btn-sm btn-info" (click)="viewCertificate(tramite.numero_radicado)" title="Descargar certificado">
+                  📄 Certificado
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="alert alert-danger" *ngIf="error">{{ error }}</div>
     </div>
-  `
+  `,
+  styles: []
 })
-export class TramitesComponent implements OnInit {
+export class ViewTramitesComponent implements OnInit {
   tramites: any[] = [];
-  busqueda = '';
-  noticiaHtml: SafeHtml = '';
-  pagoForm!: FormGroup;
+  loading = false;
+  error = '';
 
   constructor(
-    private http: HttpClient,
-    private sanitizer: DomSanitizer,
-    private fb: FormBuilder,
-    private auth: AuthService
+    private tramitesService: TramitesService,
+    private auth: AuthService,
+    private router: Router
   ) {}
 
-  get canSearchFuncionarios(): boolean {
-    const role = this.auth.getRole();
-    return role === 'ROLE_FUNCIONARIO' || role === 'ROLE_ADMIN';
+  ngOnInit() {
+    this.loadTramites();
   }
 
-  ngOnInit(): void {
-    this.pagoForm = this.fb.group({
-      tarjeta: ['', [Validators.required, Validators.pattern(/^\d{16}$/)]],
-      cvv: ['', [Validators.required, Validators.pattern(/^\d{3,4}$/)]],
-      monto: [0, [Validators.required, Validators.min(0.01)]],
-      matricula: ['', [Validators.required, Validators.maxLength(50)]]
-    });
-
-    // Ya NO mandamos Authorization manual: lo pone el interceptor
-    this.http.get<any>(`${environment.apiUrl}/tramites/mis-tramites`).subscribe({
-      next: (r: any) => (this.tramites = r.tramites ?? []),
-      error: () => {}
-    });
-
-    this.http.get<any>(`${environment.apiUrl}/noticias/ultima`).subscribe({
-      next: (r: any) => {
-        const limpio = DOMPurify.sanitize(r?.contenido_html ?? '', {
-          ALLOWED_TAGS: ['p', 'strong', 'em', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'br'],
-          ALLOWED_ATTR: []
-        });
-    
-        this.noticiaHtml = this.sanitizer.bypassSecurityTrustHtml(limpio);
+  loadTramites() {
+    this.loading = true;
+    this.tramitesService.getMyTramites().subscribe(
+      (res: any) => {
+        this.tramites = res.tramites || [];
+        this.loading = false;
       },
-      error: () => {}
-    });
+      (err: any) => {
+        this.error = err.error?.detail || 'Error al cargar los trámites';
+        this.loading = false;
+      }
+    );
   }
 
-  buscarFuncionario(): void {
-    const q = encodeURIComponent(this.busqueda.trim());
-    this.http.get<any>(`${environment.apiUrl}/intranet/funcionarios?buscar=${q}`).subscribe({
-      next: (r: any) => console.log('Funcionarios:', r),
-      error: () => {}
-    });
+  goToFileTramite() {
+    this.router.navigate(['/ciudadano/radicar']);
   }
 
-  procesarPago(): void {
-    if (this.pagoForm.invalid) {
-      this.pagoForm.markAllAsTouched();
-      return;
-    }
-
-    const tarjeta = String(this.pagoForm.value.tarjeta);
-
-    // Mock token de pasarela (no enviar PAN/CVV a backend)
-    const paymentToken = `tok_${tarjeta.slice(-4)}_${Date.now()}`;
-
-    this.http
-      .post(`${environment.apiUrl}/pago/impuesto`, {
-        payment_token: paymentToken,
-        matricula_inmobiliaria: String(this.pagoForm.value.matricula),
-        monto: Number(this.pagoForm.value.monto)
-      })
-      .subscribe({
-        next: (r: any) => alert(`Pago OK: ${JSON.stringify(r)}`),
-        error: () => {}
-      });
+  viewCertificate(radicado: string) {
+    this.router.navigate([`/ciudadano/certificado/${radicado}`]);
   }
 }
