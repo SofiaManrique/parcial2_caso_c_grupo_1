@@ -1,0 +1,23 @@
+# Instancia Backend — 34.196.57.27
+# Uso: docker-compose -f docker-compose.backend.yml up -d --build
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DB_HOST: 32.192.14.48
+      DB_PORT: "5432"
+      DB_NAME: alcaldia_db
+      DB_USER: alcaldia_app
+      DB_PASSWORD: ${DB_PASSWORD}          # definir en .env del servidor
+      JWT_SECRET: ${JWT_SECRET}             # definir en .env del servidor
+      JWT_EXP_MINUTES: "60"
+      MFA_FERNET_KEY: ${MFA_FERNET_KEY}    # definir en .env del servidor
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@alcaldia.gov.co}
+      APP_URL: https://amarillo.si-umng.com
+    restart: unless-stopped

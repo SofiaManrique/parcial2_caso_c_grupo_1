@@ -1,1 +1,1 @@
-export const environment = { production: true, apiUrl: 'https://alcaldia-grupoN.lab.umng.edu.co/api' };
+export const environment = { production: true, apiUrl: 'https://amarillo.si-umng.com/api' };

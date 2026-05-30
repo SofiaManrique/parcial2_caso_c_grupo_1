@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 
 from src.auth.dependencies import get_current_user
-from src.auth.service import create_token, decode_token
+from src.auth.service import create_token, decode_token, SECURE_COOKIE
 from src.core.audit import log_event
 from src.core.db import get_db
 
@@ -190,4 +190,24 @@ def verify_mfa_login(body: MFALoginVerify, request: Request, authorization: str 
     })
 
     log_event("mfa_verify_ok", user_type, user_id, ip=request.client.host)
-    return {"token": full_token}
+
+    # httpOnly cookie — JWT no expuesto a JavaScript (OWASP A02)
+    from fastapi import Response as _Response
+    import json as _json
+    resp = _Response(
+        content=_json.dumps({
+            "user": {
+                "user_id": user_id,
+                "nombre": payload["nombre"],
+                "role": payload["role"],
+                "user_type": user_type,
+            }
+        }),
+        media_type="application/json",
+    )
+    resp.set_cookie(
+        key="token", value=full_token,
+        httponly=True, secure=SECURE_COOKIE, samesite="lax",
+        max_age=3600, path="/",
+    )
+    return resp

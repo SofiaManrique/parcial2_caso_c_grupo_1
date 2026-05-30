@@ -237,6 +237,45 @@ def ver_tramite_intranet(
     return dict(zip(columns, row))
 
 
+# ── Panel de seguridad: audit log (admin / auditor) ──────────
+
+@router.get("/intranet/audit-log")
+def get_audit_log(
+    limit: int = 100,
+    nivel_min: int = 0,
+    user: dict = Depends(require_role("ROLE_ADMIN", "ROLE_AUDITOR")),
+):
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT id, action, user_type, user_id, detail, ip, created_at
+               FROM audit_log
+               ORDER BY created_at DESC
+               LIMIT %s""",
+            (min(limit, 500),),
+        )
+        columns = [desc[0] for desc in cur.description]
+        rows = [dict(zip(columns, r)) for r in cur.fetchall()]
+
+    level_map = {
+        "login_ok": 3, "login_fallido": 6, "cuenta_bloqueada": 10,
+        "login_paso1_ok": 3, "mfa_verify_ok": 3, "mfa_verify_fallido": 7,
+        "mfa_bloqueado": 10, "registro_ciudadano": 3, "registro_contratista": 3,
+        "crear_funcionario": 4, "cambio_password": 4, "radicar_tramite": 3,
+        "actualizar_tramite": 3, "pdf_certificado": 3, "pdf_acto": 3,
+        "pdf_auditoria": 4, "mfa_setup_iniciado": 4, "mfa_activado": 4,
+    }
+
+    for r in rows:
+        r["level"] = level_map.get(r["action"], 5)
+        r["created_at"] = str(r["created_at"])
+
+    if nivel_min > 0:
+        rows = [r for r in rows if r["level"] >= nivel_min]
+
+    return {"eventos": rows, "total": len(rows)}
+
+
 # ── Listar funcionarios (intranet) ───────────────────────────
 
 @router.get("/intranet/funcionarios")

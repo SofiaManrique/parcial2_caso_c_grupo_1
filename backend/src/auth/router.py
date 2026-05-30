@@ -3,11 +3,11 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, EmailStr, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 from src.auth.dependencies import require_role
-from src.auth.service import hash_password, verify_password, create_token, DB_CONFIG, decode_token
+from src.auth.service import hash_password, verify_password, create_token, DB_CONFIG, decode_token, SECURE_COOKIE
 from src.core.audit import log_event
 from src.core.db import get_db
 from src.core.email import send_verification_email, send_temp_password_email
@@ -25,6 +25,7 @@ MAX_INTENTOS = 5
 # ── Schemas ──────────────────────────────────────────────────
 
 class RegisterCiudadano(BaseModel):
+    model_config = ConfigDict(extra="forbid")   # rechaza campos no declarados (role, estado…)
     tipo_documento: str = "CC"
     cedula: str
     nombre: str
@@ -46,6 +47,7 @@ class RegisterCiudadano(BaseModel):
 
 
 class RegisterContratista(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     tipo_documento: str = "CC"
     cedula: str
     nombre: str
@@ -71,6 +73,7 @@ class LoginBody(BaseModel):
 
 
 class RegisterFuncionario(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     tipo_documento: str = "CC"
     cedula: str
     nombre: str
@@ -234,39 +237,55 @@ def _reset_login_fails(cur, tabla: str, user_id: int):
     cur.execute(sql_reset, (user_id,))
 
 
+def _registrar_fallo(user: tuple | None, ip: str) -> None:
+    """Persiste el intento fallido en una transacción independiente (no se revierte con la HTTPException)."""
+    if not user:
+        return
+    tabla = user[7]
+    new_fails = user[5] + 1
+    with get_db() as conn:   # conexión y commit propios — no afecta al bloque principal
+        cur = conn.cursor()
+        if new_fails >= MAX_INTENTOS:
+            until = datetime.now(timezone.utc) + timedelta(minutes=BLOQUEO_MINUTOS)
+            _update_login_fails(cur, tabla, new_fails, user[0], until)
+            log_event("cuenta_bloqueada", tabla[:-1], user[0],
+                      f"intentos={new_fails}", ip)
+        else:
+            _update_login_fails(cur, tabla, new_fails, user[0])
+
+
 @router.post("/login")
 def login(body: LoginBody, request: Request):
     ip = request.client.host
 
+    # ── Paso 1: LEER datos del usuario (conexión se cierra al salir) ──────────
     with get_db() as conn:
         cur = conn.cursor()
         user = _find_user(cur, body.cedula)
-
         dummy_hash = "$2b$12$C6UzMDM.H6dfI/f/IKcEe.6mJ6E5fIYx3X3ENcy9XUG6uHgnIY7fG"
         stored_hash = user[4] if user else dummy_hash
         password_ok = verify_password(body.password, stored_hash)
+    # ← Conexión 1 cerrada y commiteada antes de cualquier raise
 
-        if not user or not password_ok:
-            if user:
-                tabla = user[7]
-                new_fails = user[5] + 1
-                if new_fails >= MAX_INTENTOS:
-                    until = datetime.now(timezone.utc) + timedelta(minutes=BLOQUEO_MINUTOS)
-                    _update_login_fails(cur, tabla, new_fails, user[0], until)
-                    log_event("cuenta_bloqueada", tabla[:-1], user[0], f"intentos={new_fails}", ip)
-                else:
-                    _update_login_fails(cur, tabla, new_fails, user[0])
-            log_event("login_fallido", detail=f"cedula=***{body.cedula[-4:]}", ip=ip)
-            raise HTTPException(401, "Credenciales inválidas")
+    # ── Paso 2: credenciales incorrectas → actualizar contador (sin deadlock) ─
+    if not user or not password_ok:
+        log_event("login_fallido", detail=f"cedula=***{body.cedula[-4:]}", ip=ip)
+        _registrar_fallo(user, ip)   # conexión independiente, sin colisión
+        raise HTTPException(401, "Credenciales inválidas")
 
-        tabla = user[7]
+    tabla = user[7]
 
-        if user[6] and datetime.now(timezone.utc) < user[6].replace(tzinfo=timezone.utc):
-            raise HTTPException(403, "Cuenta temporalmente bloqueada. Intente más tarde.")
+    # ── Anti-enumeración OWASP A07 / Ley 1581 ─────────────────────────────────
+    if user[6] and datetime.now(timezone.utc) < user[6].replace(tzinfo=timezone.utc):
+        log_event("login_bloqueado_silencioso", None, user[0], ip=ip)
+        raise HTTPException(401, "Credenciales inválidas")
 
-        if user[3] != "activo":
-            raise HTTPException(403, "Cuenta no activa. Verifique su correo.")
+    if user[3] != "activo":
+        raise HTTPException(401, "Credenciales inválidas")
 
+    # ── Paso 3: login exitoso — resetear contador y obtener datos sesión ───────
+    with get_db() as conn:
+        cur = conn.cursor()
         _reset_login_fails(cur, tabla, user[0])
 
         if tabla == "funcionarios":
@@ -317,7 +336,39 @@ def login(body: LoginBody, request: Request):
         "must_change_password": must_change,
     })
     log_event("login_ok", user_type, user[0], ip=ip)
-    return {"token": token, "must_change_password": must_change}
+
+    # ── httpOnly cookie — JWT nunca expuesto a JavaScript (OWASP A02) ──
+    response = Response(
+        content=__import__("json").dumps({
+            "user": {
+                "user_id": user[0],
+                "nombre": user[1],
+                "role": user[2],
+                "user_type": user_type,
+            },
+            "must_change_password": must_change,
+        }),
+        media_type="application/json",
+    )
+    response.set_cookie(
+        key="token",
+        value=token,
+        httponly=True,
+        secure=False,        # True en producción (HTTPS)
+        samesite="lax",
+        max_age=3600,
+        path="/",
+    )
+    return response
+
+
+# ── Logout — elimina la httpOnly cookie ─────────────────────
+
+@router.post("/logout")
+def logout():
+    response = Response(content='{"mensaje":"Sesion cerrada"}', media_type="application/json")
+    response.delete_cookie(key="token", path="/")
+    return response
 
 
 # ── Cambio de contraseña (obligatorio primer ingreso) ────────

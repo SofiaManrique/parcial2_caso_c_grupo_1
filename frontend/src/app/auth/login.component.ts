@@ -60,8 +60,9 @@ export class LoginComponent implements OnInit {
 
     this.auth.login(cedula, password).subscribe(
       (res: any) => {
-        if (res.token) {
-          this.auth.saveToken(res.token);
+        if (res.user) {
+          // JWT en httpOnly cookie — guardamos solo metadatos del usuario
+          this.auth.saveUserMeta(res.user);
           if (res.must_change_password) {
             this.router.navigate(['/change-password']);
           } else {

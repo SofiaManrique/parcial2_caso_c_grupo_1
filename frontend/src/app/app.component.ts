@@ -72,12 +72,22 @@ import { AuthService } from './shared/services/auth.service';
               <i class="bi bi-person-plus-fill"></i>
               <span>Crear Funcionario</span>
             </a>
+            <a class="sidebar-link" *ngIf="role === 'ROLE_ADMIN'"
+               routerLink="/admin/seguridad" routerLinkActive="active">
+              <i class="bi bi-shield-exclamation"></i>
+              <span>Eventos de Seguridad</span>
+            </a>
 
             <!-- Auditor -->
             <a class="sidebar-link" *ngIf="role === 'ROLE_AUDITOR'"
                routerLink="/auditor/reporte" routerLinkActive="active">
               <i class="bi bi-bar-chart-fill"></i>
               <span>Reporte Auditoría</span>
+            </a>
+            <a class="sidebar-link" *ngIf="role === 'ROLE_AUDITOR'"
+               routerLink="/auditor/seguridad" routerLinkActive="active">
+              <i class="bi bi-shield-exclamation"></i>
+              <span>Eventos de Seguridad</span>
             </a>
 
             <!-- Funcionario + Admin: MFA -->

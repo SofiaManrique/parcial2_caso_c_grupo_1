@@ -57,7 +57,8 @@ export class MFAVerifyComponent implements OnInit {
 
     this.auth.verifyMFA(this.mfaForm.value.code).subscribe(
       (res: any) => {
-        this.auth.saveToken(res.token);
+        // JWT en httpOnly cookie — guardamos solo metadatos
+        this.auth.saveUserMeta(res.user);
         this.router.navigate([this.auth.getHomeRoute()]);
       },
       (err: any) => {

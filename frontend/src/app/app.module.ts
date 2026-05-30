@@ -21,6 +21,7 @@ import { RegisterContratistaComponent } from './auth/register-contratista.compon
 import { ContratistaContratosComponent } from './contratista/contratos.component';
 import { ChangePasswordComponent } from './auth/change-password.component';
 import { MfaSetupComponent } from './funcionario/mfa-setup.component';
+import { SecurityEventsComponent } from './admin/security-events.component';
 
 const routes: Routes = [
   { path: '', redirectTo: '/login', pathMatch: 'full' },
@@ -52,14 +53,16 @@ const routes: Routes = [
     path: 'admin',
     canActivate: [AuthGuard],
     children: [
-      { path: 'crear-funcionario', component: CreateFuncionarioComponent }
+      { path: 'crear-funcionario', component: CreateFuncionarioComponent },
+      { path: 'seguridad', component: SecurityEventsComponent }
     ]
   },
   {
     path: 'auditor',
     canActivate: [AuthGuard],
     children: [
-      { path: 'reporte', component: AuditReportViewerComponent }
+      { path: 'reporte', component: AuditReportViewerComponent },
+      { path: 'seguridad', component: SecurityEventsComponent }
     ]
   },
   {
@@ -88,7 +91,8 @@ const routes: Routes = [
     RegisterContratistaComponent,
     ContratistaContratosComponent,
     ChangePasswordComponent,
-    MfaSetupComponent
+    MfaSetupComponent,
+    SecurityEventsComponent
   ],
   imports: [
     BrowserModule,

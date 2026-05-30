@@ -10,6 +10,9 @@ JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-env")
 JWT_ALG = "HS256"
 TOKEN_MINUTES = int(os.getenv("JWT_EXP_MINUTES", "60"))
 
+# Cookie secure=True en producción (HTTPS), False solo en desarrollo local
+SECURE_COOKIE: bool = os.getenv("ENVIRONMENT", "development").lower() == "production"
+
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "127.0.0.1"),
     "database": os.getenv("DB_NAME", "alcaldia_db"),

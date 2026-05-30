@@ -27,6 +27,7 @@ services:
       DB_PASSWORD: alcaldia_pass_local
       JWT_SECRET: dev_secret_change_in_production
       JWT_EXP_MINUTES: "60"
+      ENVIRONMENT: development
       MFA_FERNET_KEY: rRB7fYBo32ofuHgtBsLYQK33GjnEg3iHFd048zsOHqQ=
       # SMTP — configurar con Mailtrap o Gmail para envío real
       SMTP_HOST: ${SMTP_HOST:-}
@@ -40,7 +41,9 @@ services:
         condition: service_healthy
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      target: dev        # etapa ng serve para desarrollo local
     ports:
       - "4200:4200"
     depends_on:

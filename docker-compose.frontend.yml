@@ -1,0 +1,10 @@
+# Instancia Frontend — 3.224.195.82
+# Uso: docker-compose -f docker-compose.frontend.yml up -d --build
+services:
+  frontend:
+    build:
+      context: ./frontend
+      target: prod         # ng build + nginx
+    ports:
+      - "4200:80"          # nginx del contenedor escucha en 80, host lo ve en 4200
+    restart: unless-stopped

@@ -17,9 +17,10 @@ _logger.propagate = False
 
 # Niveles de severidad Wazuh (0-15). >= 10 genera alerta en Wazuh.
 _LEVEL_MAP = {
-    "login_ok":             3,
-    "login_fallido":        6,
-    "cuenta_bloqueada":    10,   # alerta fuerza bruta
+    "login_ok":                   3,
+    "login_fallido":              6,
+    "cuenta_bloqueada":          10,   # alerta fuerza bruta
+    "login_bloqueado_silencioso": 8,   # cuenta bloqueada intentando acceder
     "login_paso1_ok":       3,
     "mfa_verify_ok":        3,
     "mfa_verify_fallido":   7,
