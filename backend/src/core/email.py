@@ -6,7 +6,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 SMTP_HOST = os.getenv("SMTP_HOST", "")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "noreply@alcaldia.gov.co")
@@ -24,9 +24,11 @@ def _send(to_email: str, subject: str, text: str, html: str) -> bool:
     msg.attach(MIMEText(text, "plain"))
     msg.attach(MIMEText(html, "html"))
     try:
-        # SMTP_SSL: TLS implícito desde el primer byte — Bearer python_lang_insecure_smtp fix
+        # STARTTLS explícito con contexto SSL — compatible con Mailtrap y proveedores reales
         ctx = ssl.create_default_context()
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx, timeout=10) as server:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
+            server.ehlo()
+            server.starttls(context=ctx)   # cifrado TLS con certificado verificado
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(SMTP_FROM, to_email, msg.as_string())
         return True
